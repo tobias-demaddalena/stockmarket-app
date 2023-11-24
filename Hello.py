@@ -1,51 +1,73 @@
-# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import streamlit as st
-from streamlit.logger import get_logger
+import requests
+import matplotlib.pyplot as plt
+import numpy as np
+from datetime import datetime
 
-LOGGER = get_logger(__name__)
+# Alpha Vantage API key - replace with your own
+api_key = 'VLLKN713GQBQYOUW'
 
+def get_stock_data(ticker, start_date, end_date):
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={api_key}&outputsize=full"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        time_series = data.get('Time Series (Daily)', {})
+        # Filter data based on the specified date range
+        filtered_data = {date: values for date, values in time_series.items() if start_date <= date <= end_date}
+        return filtered_data
+    else:
+        st.error(f"Failed to retrieve data for {ticker}: {response.text}")
+        return None
 
-def run():
-    st.set_page_config(
-        page_title="Hello",
-        page_icon="👋",
-    )
+def calculate_volatility(closing_prices):
+    # Calculate the daily returns
+    returns = np.diff(closing_prices) / closing_prices[:-1]
+    # Volatility is the standard deviation of daily returns
+    return np.std(returns)
 
-    st.write("# Welcome to Streamlit! 👋")
+def plot_stock_data(stock_data, ticker):
+    dates = []
+    closing_prices = []
 
-    st.sidebar.success("Select a demo above.")
+    for date, daily_data in sorted(stock_data.items()):
+        dates.append(datetime.strptime(date, '%Y-%m-%d'))
+        closing_prices.append(float(daily_data['4. close']))
 
-    st.markdown(
-        """
-        Streamlit is an open-source app framework built specifically for
-        Machine Learning and Data Science projects.
-        **👈 Select a demo from the sidebar** to see some examples
-        of what Streamlit can do!
-        ### Want to learn more?
-        - Check out [streamlit.io](https://streamlit.io)
-        - Jump into our [documentation](https://docs.streamlit.io)
-        - Ask a question in our [community
-          forums](https://discuss.streamlit.io)
-        ### See more complex demos
-        - Use a neural net to [analyze the Udacity Self-driving Car Image
-          Dataset](https://github.com/streamlit/demo-self-driving)
-        - Explore a [New York City rideshare dataset](https://github.com/streamlit/demo-uber-nyc-pickups)
-    """
-    )
+    plt.figure(figsize=(10, 6))
+    plt.plot(dates, closing_prices, marker='o', label=f'{ticker} Closing Price')
+    plt.title(f'Stock Performance: {ticker}')
+    plt.xlabel('Date')
+    plt.ylabel('Closing Price (USD)')
+    plt.grid(True)
+    plt.xticks(rotation=45)
+    plt.legend()
+    plt.tight_layout()
+    return plt, closing_prices
 
+def calculate_performance(closing_prices):
+    if closing_prices:
+        performance = ((closing_prices[-1] - closing_prices[0]) / closing_prices[0]) * 100
+        return round(performance, 2)
+    return 0
 
-if __name__ == "__main__":
-    run()
+st.title("Stock Performance Tracker")
+
+ticker = st.text_input("Enter stock ticker symbol (e.g., AAPL)")
+start_date = st.text_input("Enter start date (YYYY-MM-DD)")
+end_date = st.text_input("Enter end date (YYYY-MM-DD)")
+
+if st.button("Show Stock Data"):
+    stock_data = get_stock_data(ticker, start_date, end_date)
+    if stock_data:
+        fig, closing_prices = plot_stock_data(stock_data, ticker)
+        st.pyplot(fig)
+
+        current_price = closing_prices[-1]
+        volatility = calculate_volatility(closing_prices)
+        performance = calculate_performance(closing_prices)
+
+        st.write(f"**Current Price:** ${current_price}")
+        st.write(f"**Volatility:** {volatility * 100:.2f}%")
+        st.write(f"**Performance:** {performance}%")
+
